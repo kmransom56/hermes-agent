@@ -1517,10 +1517,12 @@ class CLICommandsMixin:
                     self._app.invalidate()
                     time.sleep(0.05)  # brief pause for refresh
                 print()
+                sys.stdout.flush()  # flush after blank line
                 ChatConsole().print(f"[{_accent_hex()}]{'─' * 40}[/]")
                 _cprint(f"  ✅ Background task #{task_num} complete")
                 _cprint(f"  Prompt: \"{prompt[:60]}{'...' if len(prompt) > 60 else ''}\"")
                 ChatConsole().print(f"[{_accent_hex()}]{'─' * 40}[/]")
+                sys.stdout.flush()  # flush after header
                 if response:
                     try:
                         from hermes_cli.skin_engine import get_active_skin
@@ -1546,11 +1548,16 @@ class CLICommandsMixin:
                     ))
                 else:
                     _cprint("  (No response generated)")
+                sys.stdout.flush()  # flush after response
 
                 # Play bell if enabled
                 if self.bell_on_complete:
                     sys.stdout.write("\a")
                     sys.stdout.flush()
+
+                # Force TUI refresh after output so prompt updates immediately
+                if self._app:
+                    self._app.invalidate()
 
             except Exception as e:
                 # Same TUI refresh pattern as success path (#2718)
@@ -1558,7 +1565,11 @@ class CLICommandsMixin:
                     self._app.invalidate()
                     time.sleep(0.05)
                 print()
+                sys.stdout.flush()
                 _cprint(f"  ❌ Background task #{task_num} failed: {e}")
+                sys.stdout.flush()  # ensure error message is visible immediately
+                if self._app:
+                    self._app.invalidate()
             finally:
                 try:
                     set_sudo_password_callback(None)

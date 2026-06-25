@@ -2019,6 +2019,29 @@ class TelegramAdapter(BasePlatformAdapter):
             if not self._acquire_platform_lock('telegram-bot-token', self.config.token, 'Telegram bot token'):
                 return False
 
+            # ── Pre-flight Telegram reset ──────────────────────────────────────
+            # Call deleteWebhook via raw HTTP BEFORE PTB initializes its connection
+            # pool. This avoids the 409 Conflict that fires when PTB's initialize()
+            # triggers getUpdates while a previous process's getUpdates session is
+            # still open server-side (~30s TTL on Telegram's end).
+            #
+            # We use a short-lived httpx client so PTB's own pool is unaffected.
+            # Non-fatal: if this fails (network down, bad token), connect() proceeds
+            # normally and PTB's built-in conflict retry logic handles it.
+            try:
+                import httpx as _httpx
+                _preflight_url = f"https://api.telegram.org/bot{self.config.token}/deleteWebhook"
+                async with _httpx.AsyncClient(timeout=10.0) as _preflight:
+                    _r = await _preflight.post(_preflight_url, json={"drop_pending_updates": False})
+                    _data = _r.json()
+                    if _data.get("ok"):
+                        logger.info("[%s] Pre-flight deleteWebhook OK", self.name)
+                    else:
+                        logger.warning("[%s] Pre-flight deleteWebhook returned: %s", self.name, _data)
+            except Exception as _pf_err:
+                logger.warning("[%s] Pre-flight deleteWebhook failed (non-fatal): %s", self.name, _pf_err)
+            # ── End pre-flight ─────────────────────────────────────────────────
+
             # Build the application
             builder = Application.builder().token(self.config.token)
             custom_base_url = self.config.extra.get("base_url")

@@ -1,96 +1,85 @@
 // Neo4j import for Hermes Critical Fixes
 // Usage: cypher-shell < add-hermes-fixes-to-neo4j.cypher
 
-// Create fix registry
-CREATE (fixes:FixRegistry {
-  name: "Hermes Critical Fixes",
-  version: "2026-06-25",
-  status: "deployed",
-  severity: "P1"
-});
+// Create fix registry (idempotent with MERGE)
+MERGE (fixes:FixRegistry {name: "Hermes Critical Fixes"})
+SET fixes.version = "2026-06-25",
+    fixes.status = "deployed",
+    fixes.severity = "P1";
 
 // Create Fix 1: Telegram 409 Conflict
-CREATE (fix1:Fix {
-  id: "hermes-telegram-409",
-  name: "Telegram Gateway 409 Conflict Silent Failure",
-  description: "Gateway goes silent after restart due to 409 Conflict on getUpdates endpoint",
-  severity: "P1",
-  impact: "All Telegram messages silently dropped after process restart",
-  rootCause: "Previous process's getUpdates session persists for ~30s on Telegram infrastructure, causing 409 Conflict when new process initializes",
-  solution: "Pre-flight HTTP deleteWebhook call before PTB initializes (Option B from RCA)",
-  status: "deployed",
-  commit: "d423e7f6d",
-  file: "plugins/platforms/telegram/adapter.py",
-  lines: "2022-2043",
-  deployedDate: "2026-06-25",
-  riskLevel: "low",
-  backward_compatible: true,
-  requires_config_change: false,
-  requires_restart: true,
-  estimated_fix_time_minutes: 5,
-  testing_commands: "hermes gateway & sleep 2; kill %1; sleep 3; echo 'Check for immediate message delivery'"
-});
+MERGE (fix1:Fix {id: "hermes-telegram-409"})
+SET fix1.name = "Telegram Gateway 409 Conflict Silent Failure",
+    fix1.description = "Gateway goes silent after restart due to 409 Conflict on getUpdates endpoint",
+    fix1.severity = "P1",
+    fix1.impact = "All Telegram messages silently dropped after process restart",
+    fix1.rootCause = "Previous process's getUpdates session persists for ~30s on Telegram infrastructure, causing 409 Conflict when new process initializes",
+    fix1.solution = "Pre-flight HTTP deleteWebhook call before PTB initializes (Option B from RCA)",
+    fix1.status = "deployed",
+    fix1.commit = "d423e7f6d",
+    fix1.file = "plugins/platforms/telegram/adapter.py",
+    fix1.lines = "2022-2043",
+    fix1.deployedDate = "2026-06-25",
+    fix1.riskLevel = "low",
+    fix1.backward_compatible = true,
+    fix1.requires_config_change = false,
+    fix1.requires_restart = true,
+    fix1.estimated_fix_time_minutes = 5,
+    fix1.testing_commands = "hermes gateway & sleep 2; kill %1; sleep 3; echo 'Check for immediate message delivery'";
 
 // Create Fix 2: CLI Task Output Freezing
-CREATE (fix2:Fix {
-  id: "hermes-cli-task-output",
-  name: "CLI Background Task Output Freezing",
-  description: "Background task results don't display until user provides input (buffering issue)",
-  severity: "P1",
-  impact: "User experience degraded - task results hidden until TUI refresh triggered",
-  rootCause: "stdout buffering in daemon thread - results flushed only on next TUI interaction",
-  solution: "Explicit sys.stdout.flush() after each output section + TUI invalidation",
-  status: "deployed",
-  commit: "d423e7f6d",
-  file: "hermes_cli/cli_commands_mixin.py",
-  lines: "1513-1575",
-  deployedDate: "2026-06-25",
-  riskLevel: "low",
-  backward_compatible: true,
-  requires_config_change: false,
-  requires_restart: false,
-  estimated_fix_time_minutes: 2,
-  testing_commands: "/background Check the current date"
-});
+MERGE (fix2:Fix {id: "hermes-cli-task-output"})
+SET fix2.name = "CLI Background Task Output Freezing",
+    fix2.description = "Background task results don't display until user provides input (buffering issue)",
+    fix2.severity = "P1",
+    fix2.impact = "User experience degraded - task results hidden until TUI refresh triggered",
+    fix2.rootCause = "stdout buffering in daemon thread - results flushed only on next TUI interaction",
+    fix2.solution = "Explicit sys.stdout.flush() after each output section + TUI invalidation",
+    fix2.status = "deployed",
+    fix2.commit = "d423e7f6d",
+    fix2.file = "hermes_cli/cli_commands_mixin.py",
+    fix2.lines = "1513-1575",
+    fix2.deployedDate = "2026-06-25",
+    fix2.riskLevel = "low",
+    fix2.backward_compatible = true,
+    fix2.requires_config_change = false,
+    fix2.requires_restart = false,
+    fix2.estimated_fix_time_minutes = 2,
+    fix2.testing_commands = "/background Check the current date";
 
-// Create Fix Registry relationships
+// Create registry relationships
 MATCH (fixes:FixRegistry {name: "Hermes Critical Fixes"}), (fix1:Fix {id: "hermes-telegram-409"})
-CREATE (fixes)-[:CONTAINS {added_date: "2026-06-25"}]->(fix1);
+MERGE (fixes)-[:CONTAINS {added_date: "2026-06-25"}]->(fix1);
 
 MATCH (fixes:FixRegistry {name: "Hermes Critical Fixes"}), (fix2:Fix {id: "hermes-cli-task-output"})
-CREATE (fixes)-[:CONTAINS {added_date: "2026-06-25"}]->(fix2);
+MERGE (fixes)-[:CONTAINS {added_date: "2026-06-25"}]->(fix2);
 
-// Create tags for easy discovery
-CREATE (tag_telegram:Tag {name: "telegram", domain: "platforms"});
-CREATE (tag_cli:Tag {name: "cli", domain: "interface"});
-CREATE (tag_critical:Tag {name: "critical", domain: "severity"});
-CREATE (tag_production:Tag {name: "production", domain: "environment"});
+// Create tags
+MERGE (tag_telegram:Tag {name: "telegram"}) SET tag_telegram.domain = "platforms";
+MERGE (tag_cli:Tag {name: "cli"}) SET tag_cli.domain = "interface";
+MERGE (tag_critical:Tag {name: "critical"}) SET tag_critical.domain = "severity";
+MERGE (tag_production:Tag {name: "production"}) SET tag_production.domain = "environment";
 
+// Tag Fix 1
 MATCH (fix1:Fix {id: "hermes-telegram-409"}), (tag:Tag {name: "telegram"})
-CREATE (fix1)-[:TAGGED_WITH]->(tag);
+MERGE (fix1)-[:TAGGED_WITH]->(tag);
 
 MATCH (fix1:Fix {id: "hermes-telegram-409"}), (tag:Tag {name: "critical"})
-CREATE (fix1)-[:TAGGED_WITH]->(tag);
+MERGE (fix1)-[:TAGGED_WITH]->(tag);
 
+MATCH (fix1:Fix {id: "hermes-telegram-409"}), (tag:Tag {name: "production"})
+MERGE (fix1)-[:TAGGED_WITH]->(tag);
+
+// Tag Fix 2
 MATCH (fix2:Fix {id: "hermes-cli-task-output"}), (tag:Tag {name: "cli"})
-CREATE (fix2)-[:TAGGED_WITH]->(tag);
+MERGE (fix2)-[:TAGGED_WITH]->(tag);
 
 MATCH (fix2:Fix {id: "hermes-cli-task-output"}), (tag:Tag {name: "critical"})
-CREATE (fix2)-[:TAGGED_WITH]->(tag);
+MERGE (fix2)-[:TAGGED_WITH]->(tag);
 
-MATCH (f:Fix), (tag:Tag {name: "production"})
-CREATE (f)-[:TAGGED_WITH]->(tag);
+MATCH (fix2:Fix {id: "hermes-cli-task-output"}), (tag:Tag {name: "production"})
+MERGE (fix2)-[:TAGGED_WITH]->(tag);
 
-// Create SystemAdminAgent relationships
-MATCH (fix1:Fix {id: "hermes-telegram-409"}), (tag:Tag {name: "critical"})
-CREATE (tag)-[:IMPORTANT_FOR {role: "SystemAdmin", reason: "Prevents silent message loss"}]->(fix1);
-
-MATCH (fix2:Fix {id: "hermes-cli-task-output"}), (tag:Tag {name: "critical"})
-CREATE (tag)-[:IMPORTANT_FOR {role: "SystemAdmin", reason: "Improves user experience"}]->(fix2);
-
-// Verification queries
-RETURN (
-  SELECT (fixes:FixRegistry)-[:CONTAINS]->(fix:Fix)
-  WHERE fixes.name = "Hermes Critical Fixes"
-  RETURN COUNT(fix) as total_fixes
-);
+// Return summary
+MATCH (registry:FixRegistry)-[:CONTAINS]->(fix:Fix)
+RETURN registry.name as registry, COUNT(fix) as total_fixes, COLLECT(fix.name) as fixes_imported;

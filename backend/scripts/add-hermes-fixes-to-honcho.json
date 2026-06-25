@@ -1,0 +1,123 @@
+{
+  "memories": [
+    {
+      "id": "hermes-fix-telegram-409",
+      "type": "fix",
+      "category": "Production Fixes",
+      "title": "Telegram Gateway 409 Conflict Silent Failure",
+      "created_at": "2026-06-25T02:10:50Z",
+      "severity": "P1",
+      "status": "deployed",
+      "metadata": {
+        "system": "hermes-agent",
+        "component": "telegram-adapter",
+        "commit": "d423e7f6d",
+        "files_changed": ["plugins/platforms/telegram/adapter.py"],
+        "lines_added": 23
+      },
+      "summary": "Gateway goes silent after restart with no error logs. Root cause: 409 Conflict error on getUpdates endpoint exhausts retry limit within 30-second server-side session TTL, triggering _set_fatal_error() silently.",
+      "problem_statement": "After 'hermes gateway' restarts, no messages arrive from Telegram. No error logs or crashes - gateway process appears healthy but silently drops all messages.",
+      "root_cause": "Previous process's getUpdates session persists for ~30s on Telegram's infrastructure. New process initialize() triggers getUpdates before old session expires, causing 409 Conflict. All 3 retries (10s, 20s, 30s) fail within that window. _set_fatal_error() marks adapter permanently dead.",
+      "solution": "Pre-flight HTTP deleteWebhook call BEFORE PTB initializes (Option B from RCA). Uses separate httpx client to clear stale webhook before connection pool initialization. Non-fatal: if it fails, normal PTB retry logic handles it.",
+      "implementation": {
+        "file": "plugins/platforms/telegram/adapter.py",
+        "line_range": "2022-2043",
+        "key_changes": [
+          "Added pre-flight deleteWebhook HTTP call after platform lock acquisition",
+          "Uses httpx.AsyncClient with 10s timeout",
+          "Sends POST to https://api.telegram.org/bot{token}/deleteWebhook with drop_pending_updates=False",
+          "Non-fatal exception handling with warning logs"
+        ]
+      },
+      "verification": {
+        "automated_tests": [
+          "Check logs for 'Pre-flight deleteWebhook OK'",
+          "Verify no errors in logs during gateway startup"
+        ],
+        "manual_tests": [
+          "Restart gateway: hermes gateway & sleep 2; kill %1",
+          "Send Telegram message during restart",
+          "Verify message delivered within 2-3s (not dropped)"
+        ],
+        "monitoring": [
+          "Check logs for 'Pre-flight deleteWebhook failed' warnings",
+          "Monitor gateway startup time (should be <5s, not delayed)",
+          "Alert on repeated 'Pre-flight deleteWebhook' failures"
+        ]
+      },
+      "deployment": {
+        "risk_level": "low",
+        "backward_compatible": true,
+        "requires_config_change": false,
+        "requires_restart": true,
+        "estimated_fix_time_minutes": 5,
+        "rollback_procedure": "git revert d423e7f6d && hermes gateway"
+      },
+      "related_issues": ["#11016 split-brain fix", "#17758 recursive stack overflow"],
+      "team": "system-admin-agents",
+      "tags": ["telegram", "critical", "production", "gateway", "silent-failure"]
+    },
+    {
+      "id": "hermes-fix-cli-task-output",
+      "type": "fix",
+      "category": "Production Fixes",
+      "title": "CLI Background Task Output Freezing",
+      "created_at": "2026-06-25T02:10:50Z",
+      "severity": "P1",
+      "status": "deployed",
+      "metadata": {
+        "system": "hermes-agent",
+        "component": "cli",
+        "commit": "d423e7f6d",
+        "files_changed": ["hermes_cli/cli_commands_mixin.py"],
+        "lines_added": 11
+      },
+      "summary": "Background task results don't display until user provides input. Root cause: stdout buffering in daemon thread prevents output from appearing immediately.",
+      "problem_statement": "When running /background <prompt>, task name displays but results never show. User must type something to trigger TUI refresh. Then results suddenly appear.",
+      "root_cause": "stdout buffering in daemon thread. Task completes and prints results to stdout, but results are buffered (not flushed). Main thread shows prompt which flushes TUI buffer. User must interact to trigger next TUI refresh before buffered task output appears.",
+      "solution": "Explicit sys.stdout.flush() after each output section. Added flush calls after: blank line, task header, task response, error messages. Final step: TUI invalidation with self._app.invalidate() to refresh UI immediately.",
+      "implementation": {
+        "file": "hermes_cli/cli_commands_mixin.py",
+        "line_range": "1513-1575",
+        "key_changes": [
+          "sys.stdout.flush() after print() (blank line)",
+          "sys.stdout.flush() after header output",
+          "sys.stdout.flush() after response Panel",
+          "sys.stdout.flush() after error message",
+          "self._app.invalidate() to refresh TUI immediately",
+          "Same pattern applied to both success and error paths"
+        ]
+      },
+      "verification": {
+        "automated_tests": [],
+        "manual_tests": [
+          "Run: /background Summarize something",
+          "Verify results appear immediately (within 100ms)",
+          "No need to type anything to see results",
+          "Error message also appears immediately",
+          "TUI prompt refreshes properly after completion"
+        ],
+        "monitoring": [
+          "User experience metrics: time until task results visible",
+          "No increase in task output buffering issues"
+        ]
+      },
+      "deployment": {
+        "risk_level": "low",
+        "backward_compatible": true,
+        "requires_config_change": false,
+        "requires_restart": false,
+        "estimated_fix_time_minutes": 2,
+        "rollback_procedure": "git revert d423e7f6d"
+      },
+      "related_issues": ["#2718 TUI overlap with output"],
+      "team": "system-admin-agents",
+      "tags": ["cli", "critical", "production", "user-experience", "output-buffering"]
+    }
+  ],
+  "import_instructions": {
+    "neo4j": "cypher-shell < add-hermes-fixes-to-neo4j.cypher",
+    "honcho": "POST /api/memory/bulk_import with this JSON",
+    "claude_local": "Read FIXES_HERMES_TELEGRAM_CLI.md for immediate context"
+  }
+}
